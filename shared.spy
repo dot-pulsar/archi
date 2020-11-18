@@ -1,0 +1,3 @@
+def shared_func():
+    
+    return `echo 'Hello from imported shellpython function'
