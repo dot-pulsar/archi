@@ -1,3 +1,4 @@
+from termcolor import colored, cprint
 import os
 from shell import sh
 import json
@@ -5,23 +6,25 @@ import json
 sh('yes | pacman -Sy --needed python-pip')
 sh('pip install termcolor')
 
-from termcolor import colored
+
+def input_opt():
+    return input(colored('>>> ', 'blue'))
 
 
 def print_no_such_opt():
     print(colored('\\\\\ There is no such option!', 'red'))
 
 
-def print_label(label: str):
-    print(colored(label, 'green'))
+def p_green(string: str):
+    cprint(string, 'green')
 
 
-def print_text(text: str):
-    print(colored(text, 'white'))
+def p_blue(string: str):
+    cprint(string, 'blue')
 
 
-def input_opt():
-    return input(colored('>>> ', 'blue'))
+def p_red(string: str):
+    cprint(string, 'red')
 
 
 class Locale:
@@ -147,12 +150,12 @@ def select_device():
     devices = {}
     i = 0
     sh.clear()
-    print_label('===================================')
+    p_green('===================================')
     #print(colored('NAME             TYPE FSTYPE SYZE', 'green'))
     sh('lsblk -n -p -o NAME,TYPE,FSTYPE,SIZE -e 7,11', True)
-    print_label('===================================')
+    p_green('===================================')
     temp_devices = sh('lsblk -d -p -n -l -o NAME -e 7,11').value
-    print_label('\n(Installation devices)')
+    p_green('\n(Installation devices)')
     for temp_device in temp_devices.split('\n'):
         if temp_device == '':
             break
@@ -176,6 +179,16 @@ def swap_size():
 
 
 def auto_partition_device_gpt():
+    device = select_device()
+    sh(f'parted -s {device} mklabel gpt', True)
+    sh(f'sgdisk {device} -n=4:0:+31M -t=1:ef02', True)
+    sh(f'sgdisk {device} -n=1:0:+512M', True)
+    sh(f'sgdisk {device} -n=2:0:+{swap_size()} -t=2:8200', True)
+    sh(f'sgdisk {device} -n=3:0:0', True)
+    return Device(device, False)
+
+
+def auto_partition_device_gpt_efi():
     device = select_device()
     sh(f'parted -s {device} mklabel gpt', True)
     sh(f'sgdisk {device} -n=1:0:+1024M -t=1:ef00', True)
@@ -231,14 +244,14 @@ def mount_partitions(device: Device):
 
 
 def umount_partitions(device: Device):
-    print_label('Unmounting all partitions')
+    p_green('Unmounting all partitions')
     sh('umount -R /mnt', True)
     sh(f'swapoff {device.swap}', True)
 
 
 def install_opts(index: int):
     sh.clear()
-    print_label('(Installation steps)')
+    p_green('(Installation steps)')
     opts = {
         1: 'pacstrap',
         2: 'genfstab',
@@ -254,37 +267,8 @@ def install_opts(index: int):
                 f'{colored(f"[{opt[0]}]","yellow")} {colored(opt[1],"blue")}')
 
 
-def install(device: Device):
-    chroot = 'arch-chroot /mnt'
-
-    install_opts(1)
-    sh('pacstrap /mnt base base-devel linux linux-firmware grub dhcpcd', True)
-    if device.is_efi:
-        sh('pacstrap /mnt efibootmgr', True)
-
-    install_opts(2)
-    sh('genfstab -p /mnt >> /mnt/etc/fstab', True)
-
-    install_opts(3)
-    sh(f'{chroot} mkinitcpio -p linux', True)
-    #sh(f'{chroot} passwd root', True)
-
-    install_opts(4)
-    if device.is_efi:
-        sh(f'{chroot} grub-install', True)
-    else:
-        sh(f'{chroot} grub-install {device.path}', True)
-
-    install_opts(5)
-    sh(f'{chroot} grub-mkconfig -o /boot/grub/grub.cfg', True)
-
-    install_opts(6)
-    print_label('Set a password for ROOT')
-    sh(f'{chroot} passwd root', True)
-
-
-def end():
-    print_label('(Device partitioning modes)')
+def install():
+    p_green('(Device partitioning modes)')
     print(
         f'{colored("[1]","yellow")} Automatic partitioning DOS\n' +
         f'{colored("[2]","yellow")} Automatic partitioning GPT (EFI)')
@@ -294,7 +278,7 @@ def end():
             device = auto_partition_device_dos()
             break
         elif opt == '2':
-            device = auto_partition_device_gpt()
+            device = auto_partition_device_gpt_efi()
             break
         else:
             print_no_such_opt()
@@ -306,7 +290,33 @@ def end():
     format_home_partition(device)
     umount_partitions(device)
     mount_partitions(device)
-    install(device)
+    chroot = 'arch-chroot /mnt'
+
+    install_opts(1)
+    sh('pacstrap /mnt base base-devel linux linux-firmware grub dhcpcd')
+    if device.is_efi:
+        sh('pacstrap /mnt efibootmgr')
+
+    install_opts(2)
+    sh('genfstab -p /mnt >> /mnt/etc/fstab')
+
+    install_opts(3)
+    sh(f'{chroot} mkinitcpio -p linux')
+
+    install_opts(4)
+    if device.is_efi:
+        sh(f'{chroot} grub-install')
+    else:
+        sh(f'{chroot} grub-install {device.path}')
+
+    install_opts(5)
+    sh(f'{chroot} grub-mkconfig -o /boot/grub/grub.cfg')
+
+    install_opts(6)
+    p_green('Set a password for ROOT')
+    sh(f'{chroot} passwd root', True)
     umount_partitions(device)
-    
-end()
+
+
+#install()
+
